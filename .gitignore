@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+dist/
+build/
+
+# Flask
+instance/
+.webassets-cache
+
+# Vue
+frontend/node_modules/
+frontend/dist/
+frontend/.temp
+frontend/.cache
+frontend/.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 日志
+*.log
