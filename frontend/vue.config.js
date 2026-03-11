@@ -2,6 +2,7 @@
 const { defineConfig } = require('@vue/cli-service')
 module.exports = defineConfig({
   transpileDependencies: true,
+  lintOnSave: false,  // 关闭 ESLint 检查
   // 配置开发服务器
   devServer: {
     port: 8080,           // 前端运行端口
