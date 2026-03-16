@@ -2,7 +2,13 @@
   <div id="app">
     <nav v-if="user">
       <span>欢迎，{{ user.username }}</span>
-      <button @click="logout">注销</button>
+      <div class="nav-links">
+        <router-link to="/">首页</router-link> |
+        <router-link to="/assets">资产管理</router-link> |
+        <router-link to="/vulnerabilities">漏洞列表</router-link> |
+        <router-link to="/scan">发起扫描</router-link> |
+        <button @click="logout">注销</button>
+      </div>
     </nav>
     <router-view />
   </div>
@@ -30,7 +36,6 @@ export default {
     }
   },
   watch: {
-    // 监听路由变化，如果 user 信息在 localStorage 中改变，可以重新获取
     $route() {
       this.user = JSON.parse(localStorage.getItem('user')) || null
     }
@@ -52,6 +57,14 @@ nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.nav-links a {
+  margin: 0 10px;
+  text-decoration: none;
+  color: #1890ff;
+}
+.nav-links a.router-link-active {
+  font-weight: bold;
 }
 nav button {
   background: #ff4d4f;
