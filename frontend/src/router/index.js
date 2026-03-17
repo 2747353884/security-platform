@@ -6,6 +6,9 @@ import Assets from '../views/Assets.vue'
 import AssetDetail from '../views/AssetDetail.vue'
 import Vulnerabilities from '../views/Vulnerabilities.vue'
 import Scan from '../views/Scan.vue'
+// 新增规则与告警页面
+import Alerts from '../views/Alerts.vue'
+import Rules from '../views/Rules.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
@@ -14,7 +17,10 @@ const routes = [
   { path: '/assets', name: 'Assets', component: Assets },
   { path: '/assets/:id', name: 'AssetDetail', component: AssetDetail, props: true },
   { path: '/vulnerabilities', name: 'Vulnerabilities', component: Vulnerabilities },
-  { path: '/scan', name: 'Scan', component: Scan }
+  { path: '/scan', name: 'Scan', component: Scan },
+  // 新增路由
+  { path: '/alerts', name: 'Alerts', component: Alerts },
+  { path: '/rules', name: 'Rules', component: Rules }
 ]
 
 const router = createRouter({

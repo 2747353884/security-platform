@@ -7,6 +7,8 @@
         <router-link to="/assets">资产管理</router-link> |
         <router-link to="/vulnerabilities">漏洞列表</router-link> |
         <router-link to="/scan">发起扫描</router-link> |
+        <router-link to="/alerts">安全事件</router-link> |
+        <router-link to="/rules">规则管理</router-link> |
         <button @click="logout">注销</button>
       </div>
     </nav>

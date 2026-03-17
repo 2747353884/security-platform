@@ -26,9 +26,12 @@ MarkupSafe==3.0.3
 packaging==26.0
 prompt_toolkit==3.0.52
 PyMySQL==1.1.2
+pyparsing==3.3.2
+python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 python-nmap==0.7.1
 redis==7.3.0
+schedule==1.2.2
 six==1.17.0
 SQLAlchemy==2.0.48
 tomli==2.4.0

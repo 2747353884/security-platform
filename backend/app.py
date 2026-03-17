@@ -126,6 +126,69 @@ class Vulnerability(db.Model):
         return f'<Vulnerability {self.cve_id}>'
 
 
+class LogSource(db.Model):
+    __tablename__ = 'log_source'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    type = db.Column(db.String(50))  # syslog, file, api
+    host = db.Column(db.String(100)) # 如果是syslog，监听的IP
+    port = db.Column(db.Integer)     # 监听端口
+    path = db.Column(db.String(255)) # 如果是文件，路径
+    enabled = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    rules = db.relationship('Rule', backref='log_source', lazy='dynamic')
+    
+    def __repr__(self):
+        return f'<LogSource {self.name}>'
+
+class Rule(db.Model):
+    __tablename__ = 'rule'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    # 规则类型：regex（正则）、threshold（阈值）、correlation（关联）
+    rule_type = db.Column(db.String(20), default='regex')
+    # 匹配模式（正则表达式或条件表达式）
+    pattern = db.Column(db.String(500), nullable=False)
+    # 严重程度：info, low, medium, high, critical
+    severity = db.Column(db.String(20), default='medium')
+    # 是否启用
+    enabled = db.Column(db.Boolean, default=True)
+    # 创建时间
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # 阈值相关（用于 threshold 类型）
+    threshold_count = db.Column(db.Integer, default=1)   # 触发阈值次数
+    threshold_seconds = db.Column(db.Integer, default=60) # 时间窗口（秒）
+    # 所属日志源（可选，空表示所有源）
+    log_source_id = db.Column(db.Integer, db.ForeignKey(LogSource.id), nullable=True)
+    
+    def __repr__(self):
+        return f'<Rule {self.name}>'
+
+
+class Alert(db.Model):
+    __tablename__ = 'alert'
+    id = db.Column(db.Integer, primary_key=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey('rule.id'), nullable=False)
+    src_ip = db.Column(db.String(45))
+    dst_ip = db.Column(db.String(45))
+    src_port = db.Column(db.Integer)
+    dst_port = db.Column(db.Integer)
+    protocol = db.Column(db.String(10))
+    message = db.Column(db.Text)        # 告警详情
+    raw_log = db.Column(db.Text)         # 原始日志
+    severity = db.Column(db.String(20))
+    status = db.Column(db.String(20), default='new')  # new, acknowledged, resolved, false_positive
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    rule = db.relationship('Rule', backref='alerts')
+    
+    def __repr__(self):
+        return f'<Alert {self.id} - {self.rule.name}>'
+
+
+
 # 用户加载回调，用于 Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
@@ -368,6 +431,178 @@ def get_vulnerabilities():
             'protocol': vuln.port.protocol
         })
     return jsonify({'code': 200, 'data': result})
+
+# ===================== 5.1 规则管理 API =====================
+# ==================== 规则管理 API ====================
+
+@app.route('/api/rules', methods=['GET'])
+@login_required
+def get_rules():
+    """获取所有规则列表"""
+    rules = Rule.query.all()
+    result = []
+    for rule in rules:
+        result.append({
+            'id': rule.id,
+            'name': rule.name,
+            'description': rule.description,
+            'rule_type': rule.rule_type,
+            'pattern': rule.pattern,
+            'severity': rule.severity,
+            'enabled': rule.enabled,
+            'threshold_count': rule.threshold_count,
+            'threshold_seconds': rule.threshold_seconds,
+            'log_source_id': rule.log_source_id,
+            'created_at': rule.created_at
+        })
+    return jsonify({'code': 200, 'data': result})
+
+
+@app.route('/api/rules', methods=['POST'])
+@login_required
+@role_required('admin')
+def create_rule():
+    """创建新规则"""
+    data = request.get_json()
+    if not data.get('name') or not data.get('pattern'):
+        return jsonify({'code': 400, 'msg': '规则名称和模式不能为空'}), 400
+    
+    # 检查名称是否已存在
+    if Rule.query.filter_by(name=data['name']).first():
+        return jsonify({'code': 400, 'msg': '规则名称已存在'}), 400
+    
+    rule = Rule(
+        name=data['name'],
+        description=data.get('description', ''),
+        rule_type=data.get('rule_type', 'regex'),
+        pattern=data['pattern'],
+        severity=data.get('severity', 'medium'),
+        enabled=data.get('enabled', True),
+        threshold_count=data.get('threshold_count', 1),
+        threshold_seconds=data.get('threshold_seconds', 60),
+        log_source_id=data.get('log_source_id')
+    )
+    db.session.add(rule)
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '规则创建成功', 'data': {'id': rule.id}})
+
+
+@app.route('/api/rules/<int:rule_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_rule(rule_id):
+    """更新规则"""
+    rule = Rule.query.get_or_404(rule_id)
+    data = request.get_json()
+    
+    # 如果更新名称，检查是否与其他规则冲突
+    if 'name' in data and data['name'] != rule.name:
+        if Rule.query.filter_by(name=data['name']).first():
+            return jsonify({'code': 400, 'msg': '规则名称已存在'}), 400
+        rule.name = data['name']
+    
+    rule.description = data.get('description', rule.description)
+    rule.pattern = data.get('pattern', rule.pattern)
+    rule.severity = data.get('severity', rule.severity)
+    rule.enabled = data.get('enabled', rule.enabled)
+    rule.threshold_count = data.get('threshold_count', rule.threshold_count)
+    rule.threshold_seconds = data.get('threshold_seconds', rule.threshold_seconds)
+    rule.rule_type = data.get('rule_type', rule.rule_type)
+    rule.log_source_id = data.get('log_source_id', rule.log_source_id)
+    
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '更新成功'})
+
+
+@app.route('/api/rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def delete_rule(rule_id):
+    """删除规则（有关联告警则禁止删除）"""
+    rule = Rule.query.get_or_404(rule_id)
+    # 检查是否有未处理的告警，决定是否允许删除
+    if rule.alerts.count() > 0:
+        return jsonify({'code': 400, 'msg': '该规则有关联的告警，请先处理'}), 400
+    db.session.delete(rule)
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '删除成功'})
+
+# ===================== 5.2 告警查询 API =====================
+# ==================== 告警管理 API ====================
+
+@app.route('/api/alerts', methods=['GET'])
+@login_required
+def get_alerts():
+    """获取告警列表，支持分页和筛选"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    status = request.args.get('status')
+    severity = request.args.get('severity')
+    
+    query = Alert.query
+    if status:
+        query = query.filter_by(status=status)
+    if severity:
+        query = query.filter_by(severity=severity)
+    
+    # 按时间倒序排列
+    alerts = query.order_by(Alert.created_at.desc()).paginate(page=page, per_page=per_page)
+    
+    result = []
+    for alert in alerts.items:
+        result.append({
+            'id': alert.id,
+            'rule_name': alert.rule.name,
+            'src_ip': alert.src_ip,
+            'dst_ip': alert.dst_ip,
+            'src_port': alert.src_port,
+            'dst_port': alert.dst_port,
+            'protocol': alert.protocol,
+            'message': alert.message,
+            'severity': alert.severity,
+            'status': alert.status,
+            'created_at': alert.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    
+    return jsonify({
+        'code': 200,
+        'data': result,
+        'total': alerts.total,
+        'pages': alerts.pages,
+        'current_page': page
+    })
+
+
+@app.route('/api/alerts/<int:alert_id>', methods=['PUT'])
+@login_required
+def update_alert_status(alert_id):
+    """更新告警状态"""
+    alert = Alert.query.get_or_404(alert_id)
+    data = request.get_json()
+    new_status = data.get('status')
+    if new_status not in ['new', 'acknowledged', 'resolved', 'false_positive']:
+        return jsonify({'code': 400, 'msg': '无效的状态值'}), 400
+    alert.status = new_status
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '状态更新成功'})
+
+
+@app.route('/api/alerts/stats', methods=['GET'])
+@login_required
+def get_alert_stats():
+    """获取告警统计信息（用于仪表盘）"""
+    total = Alert.query.count()
+    new = Alert.query.filter_by(status='new').count()
+    high = Alert.query.filter_by(severity='high').count()
+    # 可以返回更多统计
+    return jsonify({
+        'code': 200,
+        'data': {
+            'total': total,
+            'new': new,
+            'high': high
+        }
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=5000)
